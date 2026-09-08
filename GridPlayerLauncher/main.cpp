@@ -18,6 +18,8 @@ const int DEFAULT_EXT_COUNT = sizeof(DEFAULT_EXTENSIONS) / sizeof(DEFAULT_EXTENS
 // 全局变量
 std::vector<std::wstring> g_extensions;
 std::wstring g_gridPlayerPath;
+// 最大文件数阈值（默认50）
+int g_maxFileCount = 50;
 
 // 命令行长度阈值（超过此数量改用播放列表）
 const int MAX_CMDLINE_FILES = 3;
@@ -73,6 +75,10 @@ void SaveConfig(const std::wstring& gridPlayerPath, const std::vector<std::wstri
 		file << "GridPlayerPath=" << pathStr << std::endl;
 		file << std::endl;
 	}
+
+	// 写入最大文件数（默认值）
+	file << "MaxFileCount=" << g_maxFileCount << std::endl;
+	file << std::endl;
 
 	for (const auto& ext : extensions)
 	{
@@ -130,6 +136,24 @@ void LoadConfig()
 				std::wstring wpath(value.begin(), value.end());
 				g_gridPlayerPath = wpath;
 				WriteLog(L"从配置读取 GridPlayerPath: " + g_gridPlayerPath);
+			}
+			continue;
+		}
+
+		// 读取最大文件数
+		if (line.find("MaxFileCount=") == 0)
+		{
+			std::string value = line.substr(13);
+			value.erase(0, value.find_first_not_of(" \t\r\n"));
+			value.erase(value.find_last_not_of(" \t\r\n") + 1);
+			if (!value.empty())
+			{
+				int val = std::stoi(value);
+				if (val > 0)
+				{
+					g_maxFileCount = val;
+					WriteLog(L"从配置读取 MaxFileCount: " + std::to_wstring(g_maxFileCount));
+				}
 			}
 			continue;
 		}
@@ -528,6 +552,23 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmdLine, int nCmdSh
 	}
 
 	WriteLog(std::wstring(L"共找到 ") + std::to_wstring(videoFiles.size()) + L" 个视频文件");
+
+	// 新增：检查文件数是否超过阈值
+	if ((int)videoFiles.size() > g_maxFileCount)
+	{
+		std::wstring msg = L"该文件夹下有 " + std::to_wstring(videoFiles.size()) +
+			L" 个视频文件，超过了当前限制（" + std::to_wstring(g_maxFileCount) + L" 个）。\n\n" +
+			L"加载大量文件可能导致 GridPlayer 卡顿或异常。\n\n" +
+			L"是否继续？";
+		int result = MessageBoxW(NULL, msg.c_str(), L"文件数过多", MB_YESNO | MB_ICONWARNING);
+		if (result != IDYES)
+		{
+			WriteLog(L"用户取消加载大量文件");
+			LocalFree(argv);
+			return 0;
+		}
+		WriteLog(L"用户确认继续加载大量文件");
+	}
 
 	if (videoFiles.empty())
 	{
